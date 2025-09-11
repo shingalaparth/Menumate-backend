@@ -1,27 +1,26 @@
-// routes/menuRoutes.js
+// routes/menuRoutes.js 
 
 const express = require('express');
-const router = express.Router();
+// We need mergeParams: true to access :shopId from the parent router
+const router = express.Router({ mergeParams: true });
 
 const {
-  createMenuItem,
-  getVendorMenuItems,
-  getItemsByCategory,
-  updateMenuItem,
-  deleteMenuItem
+    createMenuItem,
+    getShopMenuItems, // Renamed from getVendorMenuItems
+    updateMenuItem,
+    deleteMenuItem
 } = require('../controllers/menuController');
 
-const { protect } = require('../middlewares/auth');
-const { upload } = require('../config/cloudinary'); 
+const { upload } = require('../config/cloudinary');
 
-router.use(protect);
+// Note: 'protect' middleware will be applied in the main shop route file
 
+router.route('/')
+    .post(upload.single('image'), createMenuItem) // POST /api/shops/:shopId/menu
+    .get(getShopMenuItems);                      // GET /api/shops/:shopId/menu
 
-router.post('/create', upload.single('image'), createMenuItem);
-router.put('/:id', upload.single('image'), updateMenuItem);
-
-router.get('/', getVendorMenuItems);
-router.get('/category/:categoryId', getItemsByCategory);
-router.delete('/:id', deleteMenuItem);
+router.route('/:itemId')
+    .put(upload.single('image'), updateMenuItem) // PUT /api/shops/:shopId/menu/:itemId
+    .delete(deleteMenuItem);                     // DELETE /api/shops/:shopId/menu/:itemId
 
 module.exports = router;

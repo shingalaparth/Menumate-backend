@@ -4,24 +4,21 @@ const express = require("express");
 const path = require("path");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
-
 const connectDB = require("./config/database");
 
 
 // Import Routes
-const qruserRoute = require("./routes/qruserRoutes");
+const userRoute = require("./routes/userRoutes");
 const vendorRoute = require("./routes/vendorRoutes");
+const shopRoutes = require("./routes/shopRoutes");
 
-const categoryRoutes = require("./routes/categoryRoutes");
-const menuRoutes = require("./routes/menuRoutes");
 
 dotenv.config({ path: ".env" });
 
 const app = express();
 
 // Middlewares
-app.set("view engine", "ejs");
-app.use(express.static(path.join(__dirname, "public")));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -31,19 +28,14 @@ connectDB();
 
 // Routes
 app.get("/", (req, res) => res.json({
-  success: true,
-  message: "MenuMate API with Image Upload Ready!",
-  endpoints: {
-    categories: "/api/categories",
-    menu: "/api/menu",
-    vendors: "/api/vendor"
-  }
+    success: true,
+    message: "Welcome to MenuMate API v2 (Multi-Shop Ready!)"
 }));
-
-app.use("/api/qruser", qruserRoute);
+  
+// Mount the main routers
+app.use("/api/users", userRoute);
 app.use("/api/vendor", vendorRoute);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/menu", menuRoutes);
+app.use("/api/shops", shopRoutes);
 
 
 // Image upload error handling

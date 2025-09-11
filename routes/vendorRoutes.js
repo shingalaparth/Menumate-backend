@@ -1,3 +1,5 @@
+// routes/vendorRoutes.js
+
 const express = require("express");
 const router = express.Router();
 const { loginVendor, registerVendor, logoutVendor, updateVendor, deleteVendor } = require("../controllers/vendorController");

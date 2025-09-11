@@ -16,10 +16,10 @@ const categorySchema = new mongoose.Schema({
     maxlength: [200, 'Description cannot exceed 200 characters']
   },
   
-  vendor: {
+  shop: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Vendor',
-    required: [true, 'Vendor is required']
+    ref: 'shop',
+    required: [true, 'shop is required']
   },
   
   isActive: {
@@ -35,8 +35,8 @@ const categorySchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Ensure unique category names per vendor
-categorySchema.index({ vendor: 1, name: 1 }, { unique: true });
-categorySchema.index({ vendor: 1, isActive: 1 });
+// Ensure unique category names per shop
+categorySchema.index({ shop: 1, name: 1 }, { unique: true });
+categorySchema.index({ shop : 1, isActive: 1 });
 
 module.exports = mongoose.model('Category', categorySchema);

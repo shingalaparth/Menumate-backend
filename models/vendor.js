@@ -27,12 +27,6 @@ const vendorSchema = new mongoose.Schema(
       trim: true,
       match: [/^[0-9]{10}$/, "Phone number must be 10 digits"]
     },
-    shopName: {
-      type: String,
-      required: [true, "Shop name is required"],
-      trim: true,
-      minlength: [2, "Shop name must be at least 2 characters"]
-    },
     password: {
       type: String,
       required: [true, "Password is required"],
@@ -62,14 +56,5 @@ vendorSchema.pre('save', async function (next) {
   next();
 });
 
-// MIDDLEWARE: Generate unique shopId before saving
-vendorSchema.pre('save', async function (next) {
-  if (!this.shopId) {
-    // Generate unique shop ID (e.g., SHOP001, SHOP002)
-    const count = await mongoose.model('Vendor').countDocuments();
-    this.shopId = `SHOP${String(count + 1).padStart(3, '0')}`;
-  }
-  next();
-});
 
 module.exports = mongoose.model("Vendor", vendorSchema);

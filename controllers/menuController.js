@@ -1,327 +1,158 @@
-// controllers/menuController.js - Optimized with image handling
+// controllers/menuController.js
 
-const MenuItem = require('../models/MenuItem');
+const MenuItem = require('../models/menuItem');
 const Category = require('../models/category');
+const Shop = require('../models/shop');
 const { cloudinary } = require('../config/cloudinary');
 
-// CREATE MENU ITEM WITH IMAGE
+// --- HELPER FUNCTION FOR SECURITY ---
+// We can reuse the same logic, or import it from a shared utils file
+const checkShopOwnership = async (shopId, vendorId) => {
+    const shop = await Shop.findById(shopId);
+    if (!shop) { return { success: false, message: 'Shop not found', status: 404 }; }
+    if (shop.owner.toString() !== vendorId.toString()) { return { success: false, message: 'Access denied. You do not own this shop.', status: 403 }; }
+    return { success: true };
+};
+
+
+// CREATE MENU ITEM
 const createMenuItem = async (req, res) => {
-  try {
-    let {
-      name,
-      description,
-      price,
-      categoryId,
-      preparationTime,
-      isVegetarian,
-      isVegan,
-      spiceLevel,
-      tags,
-      sortOrder
-    } = req.body;
+    try {
+        const { shopId } = req.params;
+        const vendorId = req.vendor._id;
 
-    // Check if image was uploaded
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please upload an image for the menu item'
-      });
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) { return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message }); }
+
+        if (!req.file) { return res.status(400).json({ success: false, message: 'Please upload an image' }); }
+
+        const { name, description, price, categoryId, ...otherDetails } = req.body;
+        if (!name || !price || !categoryId) {
+            await cloudinary.uploader.destroy(req.file.filename);
+            return res.status(400).json({ success: false, message: 'Name, price, and category are required' });
+        }
+
+        // 2. Verify the category belongs to the shop
+        const category = await Category.findOne({ _id: categoryId, shop: shopId });
+        if (!category) {
+            await cloudinary.uploader.destroy(req.file.filename);
+            return res.status(400).json({ success: false, message: 'Invalid category. It does not belong to this shop.' });
+        }
+
+        // 3. Create the menu item, linking it to the SHOP
+        const menuItem = await MenuItem.create({
+            ...otherDetails,
+            name,
+            description,
+            price: parseFloat(price),
+            category: categoryId,
+            shop: shopId, // Link to the shop
+            image: {
+                url: req.file.path,
+                publicId: req.file.filename
+            }
+        });
+
+        res.status(201).json({ success: true, message: 'Menu item created successfully', data: menuItem });
+
+    } catch (error) {
+        console.error('Create menu item error:', error);
+        if (req.file?.filename) { await cloudinary.uploader.destroy(req.file.filename); }
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    // Trim fields if provided
-    if (name) name = name.trim();
-    if (description) description = description.trim();
-    if (categoryId) categoryId = categoryId.trim();
-    if (spiceLevel) spiceLevel = spiceLevel.trim();
-
-    // Validation
-    if (!name || !description || !price || !categoryId) {
-      await cloudinary.uploader.destroy(req.file.filename); // rollback uploaded image
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide name, description, price, and category'
-      });
-    }
-
-    // Verify category belongs to vendor and is active
-    const category = await Category.findOne({
-      _id: categoryId,
-      vendor: req.vendor._id,
-      isActive: true
-    });
-
-    if (!category) {
-      await cloudinary.uploader.destroy(req.file.filename); // rollback uploaded image
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid category or category does not belong to vendor'
-      });
-    }
-
-    // Create menu item
-    const menuItem = await MenuItem.create({
-      name,
-      description,
-      price: parseFloat(price),
-      category: categoryId,
-      vendor: req.vendor._id,
-      image: {
-        url: req.file.path,       // Cloudinary URL
-        publicId: req.file.filename // Cloudinary public ID for deletion
-      },
-      preparationTime: preparationTime || 15,
-      isVegetarian: isVegetarian === true || isVegetarian === 'true',
-      isVegan: isVegan === true || isVegan === 'true',
-      spiceLevel,
-      tags: Array.isArray(tags) ? tags : (tags ? tags.split(',').map(tag => tag.trim()) : []),
-      sortOrder: sortOrder || 0
-    });
-
-    await menuItem.populate('category', 'name description'); // Add category info
-
-    res.status(201).json({
-      success: true,
-      message: 'Menu item created successfully',
-      data: { menuItem }
-    });
-
-  } catch (error) {
-    console.error('Create menu item error:', error);
-
-    if (req.file?.filename) {
-      try {
-        await cloudinary.uploader.destroy(req.file.filename); // rollback uploaded image
-      } catch (deleteError) {
-        console.error('Error deleting uploaded image:', deleteError);
-      }
-    }
-
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation Error',
-        errors
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Server Error',
-      error: error.message
-    });
-  }
 };
 
-// UPDATE MENU ITEM WITH OPTIONAL IMAGE UPDATE
+// GET ALL MENU ITEMS FOR A SHOP
+const getShopMenuItems = async (req, res) => {
+    try {
+        const { shopId } = req.params;
+        const vendorId = req.vendor._id;
+
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) { return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message }); }
+        
+        // 2. Find all menu items for THIS SHOP
+        const menuItems = await MenuItem.find({ shop: shopId }).populate('category', 'name').sort({ 'category.name': 1, sortOrder: 1 });
+
+        res.status(200).json({ success: true, count: menuItems.length, data: menuItems });
+
+    } catch (error) {
+        console.error('Get menu items error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// UPDATE MENU ITEM
 const updateMenuItem = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updateData = { ...req.body };
+    try {
+        const { shopId, itemId } = req.params;
+        const vendorId = req.vendor._id;
 
-    const existingItem = await MenuItem.findOne({ _id: id, vendor: req.vendor._id });
-    if (!existingItem) {
-      if (req.file?.filename) await cloudinary.uploader.destroy(req.file.filename);
-      return res.status(404).json({ success: false, message: 'Menu item not found' });
-    }
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) { return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message }); }
 
-    // Handle image update
-    if (req.file) {
-      if (existingItem.image.publicId) {
-        try {
-          await cloudinary.uploader.destroy(existingItem.image.publicId);
-          console.log(`Old image deleted: ${existingItem.image.publicId}`);
-        } catch (deleteError) {
-          console.error('Error deleting old image:', deleteError);
+        // Find the existing item to handle image deletion if needed
+        const existingItem = await MenuItem.findOne({ _id: itemId, shop: shopId });
+        if (!existingItem) {
+            return res.status(404).json({ success: false, message: 'Menu item not found in this shop' });
         }
-      }
-      updateData.image = { url: req.file.path, publicId: req.file.filename };
-    }
 
-    // If updating category, verify it belongs to vendor
-    if (updateData.categoryId) {
-      const category = await Category.findOne({
-        _id: updateData.categoryId,
-        vendor: req.vendor._id,
-        isActive: true
-      });
+        const updateData = { ...req.body };
 
-      if (!category) {
-        if (req.file?.filename) await cloudinary.uploader.destroy(req.file.filename);
-        return res.status(400).json({ success: false, message: 'Invalid category' });
-      }
-
-      updateData.category = updateData.categoryId;
-      delete updateData.categoryId;
-    }
-
-    // Convert fields properly
-    if (updateData.price) updateData.price = parseFloat(updateData.price);
-    if (updateData.preparationTime) updateData.preparationTime = parseInt(updateData.preparationTime);
-    if (updateData.sortOrder) updateData.sortOrder = parseInt(updateData.sortOrder);
-
-    // Boolean conversions
-    ['isVegetarian', 'isVegan', 'isAvailable'].forEach(field => {
-      if (updateData[field] !== undefined) {
-        updateData[field] = updateData[field] === true || updateData[field] === 'true';
-      }
-    });
-
-    // Tags handling
-    if (updateData.tags && typeof updateData.tags === 'string') {
-      updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
-    }
-
-    const updatedItem = await MenuItem.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true
-    }).populate('category', 'name description');
-
-    res.status(200).json({
-      success: true,
-      message: 'Menu item updated successfully',
-      data: { menuItem: updatedItem }
-    });
-
-  } catch (error) {
-    console.error('Update menu item error:', error);
-
-    if (req.file?.filename) {
-      try {
-        await cloudinary.uploader.destroy(req.file.filename);
-      } catch (deleteError) {
-        console.error('Error deleting uploaded image:', deleteError);
-      }
-    }
-
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation Error',
-        errors
-      });
-    }
-
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-// GET ALL MENU ITEMS FOR VENDOR (GROUPED BY CATEGORY)
-const getVendorMenuItems = async (req, res) => {
-  try {
-    const { categoryId, isAvailable, search, page = 1, limit = 50 } = req.query;
-
-    const filter = { vendor: req.vendor._id };
-    if (categoryId) filter.category = categoryId;
-    if (isAvailable !== undefined) filter.isAvailable = isAvailable === 'true';
-    if (search) filter.$text = { $search: search };
-
-    const menuItems = await MenuItem.find(filter)
-      .populate('category', 'name description sortOrder')
-      .sort({ 'category.sortOrder': 1, sortOrder: 1, createdAt: 1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    // Group items by category
-    const groupedItems = menuItems.reduce((acc, item) => {
-      const categoryId = item.category._id.toString();
-      if (!acc[categoryId]) {
-        acc[categoryId] = {
-          category: {
-            id: categoryId,
-            name: item.category.name,
-            description: item.category.description,
-            sortOrder: item.category.sortOrder
-          },
-          items: []
-        };
-      }
-      acc[categoryId].items.push(item);
-      return acc;
-    }, {});
-
-    const result = Object.values(groupedItems).sort(
-      (a, b) => (a.category.sortOrder || 0) - (b.category.sortOrder || 0)
-    );
-
-    const total = await MenuItem.countDocuments(filter);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        menuByCategory: result,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / limit)
+        // Handle image update
+        if (req.file) {
+            if (existingItem.image?.publicId) {
+                await cloudinary.uploader.destroy(existingItem.image.publicId);
+            }
+            updateData.image = { url: req.file.path, publicId: req.file.filename };
         }
-      }
-    });
+        
+        // 2. Find and update
+        const updatedItem = await MenuItem.findByIdAndUpdate(itemId, updateData, { new: true, runValidators: true });
+        
+        res.status(200).json({ success: true, message: 'Menu item updated successfully', data: updatedItem });
 
-  } catch (error) {
-    console.error('Get menu items error:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-// GET ITEMS BY SPECIFIC CATEGORY
-const getItemsByCategory = async (req, res) => {
-  try {
-    const { categoryId } = req.params;
-
-    const category = await Category.findOne({ _id: categoryId, vendor: req.vendor._id });
-    if (!category) {
-      return res.status(404).json({ success: false, message: 'Category not found' });
+    } catch (error) {
+        console.error('Update menu item error:', error);
+        if (req.file?.filename) { await cloudinary.uploader.destroy(req.file.filename); }
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    const items = await MenuItem.find({ category: categoryId, vendor: req.vendor._id })
-      .sort({ sortOrder: 1, createdAt: 1 });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        category: {
-          id: category._id,
-          name: category.name,
-          description: category.description
-        },
-        items,
-        count: items.length
-      }
-    });
-
-  } catch (error) {
-    console.error('Get items by category error:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
 };
 
 // DELETE MENU ITEM
 const deleteMenuItem = async (req, res) => {
-  try {
-    const menuItem = await MenuItem.findOneAndDelete({
-      _id: req.params.id,
-      vendor: req.vendor._id
-    });
+    try {
+        const { shopId, itemId } = req.params;
+        const vendorId = req.vendor._id;
 
-    if (!menuItem) {
-      return res.status(404).json({ success: false, message: 'Menu item not found' });
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) { return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message }); }
+
+        // 2. Find and delete
+        const menuItem = await MenuItem.findOneAndDelete({ _id: itemId, shop: shopId });
+
+        if (!menuItem) {
+            return res.status(404).json({ success: false, message: 'Menu item not found in this shop' });
+        }
+        
+        // The pre-delete hook in the model will handle image deletion from Cloudinary
+
+        res.status(200).json({ success: true, message: 'Menu item deleted successfully' });
+
+    } catch (error) {
+        console.error('Delete menu item error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    res.status(200).json({ success: true, message: 'Menu item deleted successfully' });
-
-  } catch (error) {
-    console.error('Delete menu item error:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
 };
 
+
 module.exports = {
-  createMenuItem,
-  updateMenuItem,
-  getVendorMenuItems,
-  getItemsByCategory,
-  deleteMenuItem
+    createMenuItem,
+    getShopMenuItems,
+    updateMenuItem,
+    deleteMenuItem
 };

@@ -1,23 +1,21 @@
 // routes/categoryRoutes.js
 
 const express = require('express');
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 const {
-  createCategory,
-  getVendorCategories,
-  updateCategory,
-  deleteCategory
+    createCategory,
+    getShopCategories, // Renamed from getVendorCategories
+    updateCategory,
+    deleteCategory
 } = require('../controllers/categoryController');
 
-const { protect } = require('../middlewares/auth');
+router.route('/')
+    .post(createCategory)   // POST /api/shops/:shopId/categories
+    .get(getShopCategories);  // GET /api/shops/:shopId/categories
 
-// All routes require vendor authentication
-router.use(protect);
-
-router.post('/create', createCategory);
-router.get('/', getVendorCategories);
-router.put('/:id', updateCategory);
-router.delete('/:id', deleteCategory);
+router.route('/:categoryId')
+    .put(updateCategory)    // PUT /api/shops/:shopId/categories/:categoryId
+    .delete(deleteCategory);  // DELETE /api/shops/:shopId/categories/:categoryId
 
 module.exports = router;

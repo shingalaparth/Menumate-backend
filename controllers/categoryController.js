@@ -1,260 +1,155 @@
 // controllers/categoryController.js
+
 const Category = require('../models/category');
-const MenuItem = require('../models/MenuItem');
+const Shop = require('../models/shop');
+const MenuItem = require('../models/menuItem');
+
+// --- HELPER FUNCTION FOR SECURITY ---
+// Checks if the logged-in vendor owns the shop they are trying to access
+const checkShopOwnership = async (shopId, vendorId) => {
+    const shop = await Shop.findById(shopId);
+    if (!shop) {
+        return { success: false, message: 'Shop not found', status: 404 };
+    }
+    if (shop.owner.toString() !== vendorId.toString()) {
+        return { success: false, message: 'Access denied. You do not own this shop.', status: 403 };
+    }
+    return { success: true, shop }; // Return the shop object if successful
+};
+
 
 // CREATE CATEGORY
 const createCategory = async (req, res) => {
-  try {
-    const { name, description, sortOrder } = req.body;
+    try {
+        const { shopId } = req.params;
+        const vendorId = req.vendor._id;
 
-    // Validation
-    if (!name) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category name is required'
-      });
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) {
+            return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
+        }
+
+        const { name, description, sortOrder } = req.body;
+        if (!name) {
+            return res.status(400).json({ success: false, message: 'Category name is required' });
+        }
+
+        // 2. Check for duplicate name WITHIN THIS SHOP
+        const existingCategory = await Category.findOne({ shop: shopId, name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
+        if (existingCategory) {
+            return res.status(400).json({ success: false, message: 'Category with this name already exists for this shop' });
+        }
+
+        // 3. Create category linked to the SHOP
+        const category = await Category.create({
+            name: name.trim(),
+            description: description ? description.trim() : '',
+            shop: shopId,
+            sortOrder: sortOrder || 0
+        });
+
+        res.status(201).json({ success: true, message: 'Category created successfully', data: category });
+
+    } catch (error) {
+        console.error('Create category error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    // Check if category already exists for this vendor (case-insensitive)
-    const existingCategory = await Category.findOne({
-      vendor: req.vendor._id,
-      name: { $regex: new RegExp(`^${name.trim()}$`, 'i') }
-    });
-
-    if (existingCategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category with this name already exists'
-      });
-    }
-
-    // Create new category
-    const category = await Category.create({
-      name: name.trim(),
-      description: description ? description.trim() : '',
-      vendor: req.vendor._id,
-      sortOrder: sortOrder || 0
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Category created successfully',
-      data: {
-        category
-      }
-    });
-
-  } catch (error) {
-    console.error('Create category error:', error);
-
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation Error',
-        errors
-      });
-    }
-
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category with this name already exists'
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Server Error',
-      error: error.message
-    });
-  }
 };
 
-// GET ALL CATEGORIES FOR VENDOR
-const getVendorCategories = async (req, res) => {
-  try {
-    const { includeInactive } = req.query;
+// GET ALL CATEGORIES FOR A SPECIFIC SHOP
+const getShopCategories = async (req, res) => {
+    try {
+        const { shopId } = req.params;
+        const vendorId = req.vendor._id;
 
-    // Build filter
-    const filter = { vendor: req.vendor._id };
-    if (includeInactive !== 'true') {
-      filter.isActive = true;
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) {
+            return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
+        }
+
+        // 2. Find all categories for THIS SHOP
+        const categories = await Category.find({ shop: shopId }).sort({ sortOrder: 1, name: 1 });
+
+        res.status(200).json({ success: true, count: categories.length, data: categories });
+
+    } catch (error) {
+        console.error('Get categories error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    // Get categories with item counts
-    const categories = await Category.aggregate([
-      { $match: filter },
-      {
-        $lookup: {
-          from: 'menuitems',
-          let: { categoryId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$category', '$$categoryId'] },
-                    { $eq: ['$vendor', filter.vendor] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: 'items'
-        }
-      },
-      {
-        $addFields: {
-          itemCount: { $size: '$items' },
-          availableItemCount: {
-            $size: {
-              $filter: {
-                input: '$items',
-                cond: { $eq: ['$$this.isAvailable', true] }
-              }
-            }
-          }
-        }
-      },
-      {
-        $project: {
-          items: 0 // Remove items array from output
-        }
-      },
-      { $sort: { sortOrder: 1, createdAt: 1 } }
-    ]);
-
-    res.status(200).json({
-      success: true,
-      count: categories.length,
-      data: {
-        categories
-      }
-    });
-
-  } catch (error) {
-    console.error('Get categories error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server Error'
-    });
-  }
 };
 
 // UPDATE CATEGORY
 const updateCategory = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, description, isActive, sortOrder } = req.body;
+    try {
+        const { shopId, categoryId } = req.params;
+        const vendorId = req.vendor._id;
 
-    const category = await Category.findOne({
-      _id: id,
-      vendor: req.vendor._id
-    });
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) {
+            return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
+        }
 
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found'
-      });
+        // 2. Find and update the category
+        const updatedCategory = await Category.findOneAndUpdate(
+            { _id: categoryId, shop: shopId }, // Ensure the category belongs to the shop
+            req.body,
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedCategory) {
+            return res.status(404).json({ success: false, message: 'Category not found in this shop' });
+        }
+
+        res.status(200).json({ success: true, message: 'Category updated successfully', data: updatedCategory });
+
+    } catch (error) {
+        console.error('Update category error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    // Check for duplicate name if updating name
-    if (name && name !== category.name) {
-      const existingCategory = await Category.findOne({
-        vendor: req.vendor._id,
-        name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
-        _id: { $ne: id }
-      });
-
-      if (existingCategory) {
-        return res.status(400).json({
-          success: false,
-          message: 'Category with this name already exists'
-        });
-      }
-    }
-
-    // Update fields
-    const updateData = {};
-    if (name) updateData.name = name.trim();
-    if (description !== undefined) updateData.description = description.trim();
-    if (isActive !== undefined) updateData.isActive = isActive;
-    if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
-
-    const updatedCategory = await Category.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: 'Category updated successfully',
-      data: {
-        category: updatedCategory
-      }
-    });
-
-  } catch (error) {
-    console.error('Update category error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server Error'
-    });
-  }
 };
 
 // DELETE CATEGORY
 const deleteCategory = async (req, res) => {
-  try {
-    const { id } = req.params;
+    try {
+        const { shopId, categoryId } = req.params;
+        const vendorId = req.vendor._id;
 
-    const category = await Category.findOne({
-      _id: id,
-      vendor: req.vendor._id
-    });
+        // 1. Security Check
+        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        if (!ownershipCheck.success) {
+            return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
+        }
 
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Category not found'
-      });
+        // 2. Check if the category is empty
+        const itemCount = await MenuItem.countDocuments({ category: categoryId });
+        if (itemCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot delete category. It contains ${itemCount} menu items. Please move or delete them first.`
+            });
+        }
+        
+        // 3. Find and delete the category
+        const category = await Category.findOneAndDelete({ _id: categoryId, shop: shopId });
+        if (!category) {
+            return res.status(404).json({ success: false, message: 'Category not found in this shop' });
+        }
+
+        res.status(200).json({ success: true, message: 'Category deleted successfully' });
+
+    } catch (error) {
+        console.error('Delete category error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    // Check if category has menu items
-    const itemCount = await MenuItem.countDocuments({
-      category: id,
-      vendor: req.vendor._id
-    });
-
-    if (itemCount > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot delete category. It contains ${itemCount} menu items. Please move or delete the items first.`
-      });
-    }
-
-    await Category.findByIdAndDelete(id);
-
-    res.status(200).json({
-      success: true,
-      message: 'Category deleted successfully'
-    });
-
-  } catch (error) {
-    console.error('Delete category error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server Error'
-    });
-  }
 };
 
+
 module.exports = {
-  createCategory,
-  getVendorCategories,
-  updateCategory,
-  deleteCategory
+    createCategory,
+    getShopCategories,
+    updateCategory,
+    deleteCategory
 };
