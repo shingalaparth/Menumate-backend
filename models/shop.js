@@ -25,6 +25,10 @@ const shopSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: true // Allows admin to deactivate a shop
+    },
+    upiQrCodeUrl: {
+        type: String, // This will store the Cloudinary URL of the QR image
+        default: ''
     }
 }, {
     timestamps: true

@@ -18,7 +18,7 @@ const categorySchema = new mongoose.Schema({
   
   shop: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'shop',
+    ref: 'Shop',
     required: [true, 'shop is required']
   },
   

@@ -9,17 +9,12 @@ const Vendor = require("../models/vendor");
 
 
 // ------------------- 📌 PUBLIC ROUTES ------------------- //
-
-// 👉 Register a new vendor
-// No login required
 router.post("/register", registerVendor);
-
-// 👉 Login vendor
-// Returns JWT token in cookies
 router.post("/login", loginVendor);
 
 
 // ------------------- 📌 PROTECTED ROUTES ------------------- //
+router.use(protect)
 
 router.get("/profile", protect, (req, res) => { 
   res.json({
@@ -32,8 +27,8 @@ router.get("/profile", protect, (req, res) => {
   });
 });
 router.post("/logout", protect, logoutVendor);
-router.patch("/update", protect, updateVendor);
-router.delete("/delete", protect, deleteVendor);
+router.patch("/profile", protect, updateVendor);
+router.delete("/profile", protect, deleteVendor);
 
 // ------------------- 📌 ADMIN ROUTES ------------------- //
 

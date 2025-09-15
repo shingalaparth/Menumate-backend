@@ -2,12 +2,9 @@
 
 const express = require('express');
 const router = express.Router();
-const { registerOrLoginUser, verifyOtpAndLogin } = require('../controllers/userController');
+const { registerOrLoginUser } = require('../controllers/userController');
 
-// Route to handle user registration or login request (sends OTP)
+// This single route now handles both registration and login
 router.post('/login', registerOrLoginUser);
-
-// Route to verify the OTP and complete the login
-router.post('/verify', verifyOtpAndLogin);
 
 module.exports = router;

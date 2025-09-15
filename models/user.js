@@ -16,13 +16,6 @@ const userSchema = new mongoose.Schema({
         // Basic validation for a 10-digit Indian phone number
         match: [/^[6-9]\d{9}$/, "Please enter a valid 10-digit phone number"]
     },
-    // For OTP-based authentication
-    otp: {
-        type: String,
-    },
-    otpExpires: {
-        type: Date,
-    },
     // You can add more fields here later, like saved addresses, etc.
 
 }, {
