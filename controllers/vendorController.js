@@ -8,126 +8,51 @@ const Shop = require("../models/shop"); // Import shop model (for cleanup on del
 // ==================================================================
 // REGISTER VENDOR
 // ==================================================================
-const registerVendor = async (req, res) => {
+const registerVendor = async (req, res, next) => {
     try {
         const { name, email, number, password } = req.body;
-
-        // 1) Validation
         if (!name || !email || !number || !password) {
-            return res.status(400).json({
-                success: false,
-                message: "Please provide name, email, number, and password"
-            });
+            return res.status(400).json({ success: false, message: "Please provide all required fields" });
         }
-
-        // 2) Normalize email (always lowercase for consistency)
         const emailLower = email.toLowerCase();
-
-        // 3) Check if vendor already exists (email or number)
-        const existingVendor = await Vendor.findOne({
-            $or: [{ email: emailLower }, { number }]
-        });
+        const existingVendor = await Vendor.findOne({ $or: [{ email: emailLower }, { number }] });
         if (existingVendor) {
-            return res.status(400).json({
-                success: false,
-                message: "Vendor already exists with this email or number"
-            });
+            return res.status(400).json({ success: false, message: "Vendor already exists with this email or number" });
         }
-
-        // 4) Create new vendor (password will be hashed in model middleware)
-        const newVendor = await Vendor.create({
-            name,
-            email: emailLower,
-            number,
-            password
-        });
-
-        // 5) Create JWT token
-        const token = createJWT({
-            id: newVendor._id,
-            email: newVendor.email,
-            role: newVendor.role
-        });
-
-        // 6) Response (no sensitive fields returned)
-        return res.status(201).json({
+        const newVendor = await Vendor.create({ name, email: emailLower, number, password });
+        const token = createJWT({ id: newVendor._id, role: newVendor.role });
+        res.status(201).json({
             success: true,
-            message: "Vendor registered successfully. Please log in and add your shop details.",
+            message: "Vendor registered successfully.",
             token,
-            data: {
-                vendor: {
-                    id: newVendor._id,
-                    name: newVendor.name,
-                    email: newVendor.email
-                }
-            }
+            data: { id: newVendor._id, name: newVendor.name, email: newVendor.email }
         });
-
-    } catch (error) {
-        console.error("Vendor registration error:", error);
-        res.status(500).json({ success: false, message: "Server error during registration" });
-    }
+    } catch (error) { next(error); }
 };
 
 // ==================================================================
 // LOGIN VENDOR
 // ==================================================================
-const loginVendor = async (req, res) => {
+
+const loginVendor = async (req, res, next) => {
     try {
         const { email, password } = req.body;
-
-        // 1) Validation
         if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: "Email and password are required"
-            });
+            return res.status(400).json({ success: false, message: "Email and password are required" });
         }
-
-        // 2) Normalize email
         const emailLower = email.toLowerCase();
-
-        // 3) Find vendor (include password for comparison)
         const vendor = await Vendor.findOne({ email: emailLower }).select("+password");
-        if (!vendor) {
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password" // generic message for security
-            });
+        if (!vendor || !(await comparePassword(password, vendor.password))) {
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
-
-        // 4) Compare passwords
-        const isMatch = await comparePassword(password, vendor.password);
-        if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password" // generic message for security
-            });
-        }
-        // 5) Create JWT
-        const token = createJWT({
-            id: vendor._id,
-            email: vendor.email,
-            role: vendor.role
-        });
-        // 6) Response
+        const token = createJWT({ id: vendor._id, role: vendor.role });
         res.status(200).json({
             success: true,
             message: "Login successful",
             token,
-            data: {
-                vendor: {
-                    id: vendor._id,
-                    name: vendor.name,
-                    email: vendor.email
-                }
-            }
+            data: { id: vendor._id, name: vendor.name, email: vendor.email }
         });
-
-    } catch (error) {
-        console.error("Vendor registration error:", error);
-        res.status(500).json({ success: false, message: "Server error during registration" });
-    }
+    } catch (error) { next(error); }
 };
 
 // ==================================================================
@@ -206,11 +131,9 @@ const deleteVendor = async (req, res) => {
     }
 };
 
-// ==================================================================
-// EXPORTS
-// ==================================================================
+
 module.exports = {
-    registerVendor,
+    registerVendor, 
     loginVendor,
     logoutVendor,
     updateVendor,

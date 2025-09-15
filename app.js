@@ -21,6 +21,7 @@ const vendorOrderRoutes = require("./routes/vendorOrderRoutes");
 dotenv.config({ path: ".env" });
 
 const app = express();
+app.use(cors())
 
 // socket.io setup
 const server = http.createServer(app);

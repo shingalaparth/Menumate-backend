@@ -1,30 +1,58 @@
-Got it 👍 I’ll refine your **README.md** so it looks more professional, clean, and developer-friendly.
-Here’s the improved version ⬇️
+# 🍽️ MenuMate Backend (V1)
+
+This repository contains the complete, feature-rich backend for **MenuMate**, a QR code-based digital menu and ordering system.
+This **V1 release** is a production-ready foundation for a **Single Shop / Café** business model, including **real-time capabilities** and a **multi-role architecture**.
 
 ---
 
-# 🍽️ MenuMate Backend
+## ✨ Core Features
 
-A **QR code-based digital menu system** for cafes, restaurants, and food courts.
-It enables vendors to manage menus, categories, and orders while customers can easily scan a QR code to explore menus and register seamlessly.
+### 🔐 Multi-Role Architecture
 
----
+* Secure, token-based (JWT) authentication for three distinct roles:
 
-## 🚀 Features
+  * **Customers**
+  * **Vendors**
+  * **Super Admin**
 
-* **Vendor Authentication**: Secure JWT-based login & registration
-* **Category Management**: Create, update, and organize food categories
-* **Menu Management**: Full CRUD operations for menu items
-* **Image Upload**: Cloudinary integration with Multer for food item images
-* **QR User Registration**: Customer registration system via QR codes
+### 🏪 Vendor & Multi-Shop Management
+
+* A single vendor account can **own and manage multiple shops**.
+
+### 📖 Full Menu Control
+
+* Complete CRUD (Create, Read, Update, Delete) for **nested menus**, including:
+
+  * Categories
+  * Items
+  * Image uploads via **Cloudinary**
+
+### ⚡ Real-Time Order Pipeline
+
+* Customers **place orders**.
+* Vendors **instantly receive them** on their dashboard via **Socket.IO** (no refresh required).
+
+### 🔄 Two-Way Real-Time Updates
+
+* Vendors update order statuses (**Accepted, Preparing, Completed**).
+* Customers get **real-time notifications** of updates.
+
+### 🛠️ Supporting Features
+
+* **QR Code System** → Each table has a unique QR linked to its shop.
+* **Reviews & Ratings** → Customers can review completed orders; vendors see ratings & feedback.
+* **Vendor Analytics** → Stats like total revenue, today’s sales, and top-selling items.
+* **Waiter Call** → Real-time feature for customers to request assistance from their table.
+* **Manual UPI Payments** → Vendors can upload their **UPI QR Code** for customers to scan & pay.
 
 ---
 
 ## 🛠️ Tech Stack
 
-* **Backend**: Node.js, Express.js
-* **Database**: MongoDB + Mongoose
-* **Authentication**: JWT tokens
+* **Framework**: Node.js, Express.js
+* **Database**: MongoDB + Mongoose ODM
+* **Authentication**: JSON Web Tokens (JWT)
+* **Real-Time**: Socket.IO
 * **Image Storage**: Cloudinary
 * **File Uploads**: Multer
 
@@ -35,119 +63,155 @@ It enables vendors to manage menus, categories, and orders while customers can e
 ```
 menumate-backend/
 ├── config/
-│   ├── database.js        # MongoDB connection
-│   └── cloudinary.js      # Cloudinary configuration
+│   ├── cloudinary.js
+│   └── database.js
 ├── controllers/
-│   ├── vendorController.js
-│   ├── menuController.js
+│   ├── analyticsController.js
+│   ├── cartController.js
 │   ├── categoryController.js
-│   └── qruserController.js
-├── models/
-│   ├── vendor.js
-│   ├── menuItem.js
-│   ├── category.js
-│   └── qruser.js
-├── routes/
-│   ├── vendorRoutes.js
-│   ├── menuRoutes.js
-│   ├── categoryRoutes.js
-│   └── qruserRoutes.js
+│   ├── menuController.js
+│   ├── orderController.js
+│   ├── publicController.js
+│   ├── reviewController.js
+│   ├── shopController.js
+│   ├── tableController.js
+│   ├── userController.js
+│   └── vendorController.js
 ├── middlewares/
-│   ├── auth.js
-│   └── authorize.js
+│   ├── auth_user.js      # Protects customer routes
+│   ├── auth.js           # Protects vendor routes
+│   └── authorize.js      # Authorizes admin-only routes
+├── models/
+│   ├── cart.js
+│   ├── category.js
+│   ├── menuItem.js
+│   ├── order.js
+│   ├── review.js
+│   ├── shop.js
+│   ├── table.js
+│   ├── user.js
+│   └── vendor.js
+├── routes/
+│   ├── analyticsRoutes.js
+│   ├── cartRoutes.js
+│   ├── categoryRoutes.js
+│   ├── menuRoutes.js
+│   ├── orderRoutes.js
+│   ├── publicRoutes.js
+│   ├── reviewRoutes.js
+│   ├── shopRoutes.js
+│   ├── tableRoutes.js
+│   ├── userRoutes.js
+│   ├── vendorOrderRoutes.js
+│   └── vendorRoutes.js
 ├── utils/
 │   ├── hash.js
 │   └── jwt.js
-└── app.js                 # Main entry point
+├── .env
+├── .env.example
+└── app.js
 ```
 
 ---
 
-## 📌 API Endpoints
+## 📚 API Endpoints
 
-### 🔑 Vendor Authentication
+### \[PUBLIC] – No Authentication Required
 
-* `POST /api/vendor/register` → Register a new vendor
-* `POST /api/vendor/login` → Vendor login
-* `GET /api/vendor/profile` → Get vendor profile
-* `POST /api/vendor/logout` → Vendor logout
+| Method   | Endpoint                         | Description                                        |
+| -------- | -------------------------------- | -------------------------------------------------- |
+| **GET**  | `/api/public/menu/:qrIdentifier` | Fetch shop, table & menu details for a scanned QR. |
+| **POST** | `/api/users/login`               | Customer login (name + phone).                     |
+| **POST** | `/api/vendor/register`           | Vendor account creation.                           |
+| **POST** | `/api/vendor/login`              | Vendor login.                                      |
 
-### 📂 Category Management
+---
 
-* `POST /api/categories/create` → Create new category
-* `GET /api/categories` → Get all vendor categories
-* `PUT /api/categories/:id` → Update category
-* `DELETE /api/categories/:id` → Delete category
+### \[CUSTOMER] – Requires Customer JWT
 
-### 🍴 Menu Management
+| Method     | Endpoint                      | Description                          |
+| ---------- | ----------------------------- | ------------------------------------ |
+| **GET**    | `/api/cart`                   | Get current user’s cart.             |
+| **POST**   | `/api/cart`                   | Add or update an item in cart.       |
+| **DELETE** | `/api/cart/items/:menuItemId` | Remove item from cart.               |
+| **POST**   | `/api/orders`                 | Place order from cart.               |
+| **GET**    | `/api/orders`                 | Get customer order history.          |
+| **GET**    | `/api/orders/:id`             | Get details of one order.            |
+| **POST**   | `/api/orders/:id/review`      | Submit review for a completed order. |
 
-* `POST /api/menu/create` → Create menu item (with image upload)
-* `GET /api/menu` → Get all menu items grouped by category
-* `GET /api/menu/category/:categoryId` → Get items by category
-* `PUT /api/menu/:id` → Update menu item
-* `DELETE /api/menu/:id` → Delete menu item
+---
 
-### 👥 Customer (QR User) Registration
+### \[VENDOR] – Requires Vendor JWT
 
-* `POST /api/qruser/register` → Register QR user
+| Method     | Endpoint                                    | Description                                |
+| ---------- | ------------------------------------------- | ------------------------------------------ |
+| **PATCH**  | `/api/vendor/profile`                       | Update vendor profile.                     |
+| **POST**   | `/api/shops`                                | Create a new shop.                         |
+| **GET**    | `/api/shops`                                | Get all shops owned by vendor.             |
+| **PUT**    | `/api/shops/:shopId/upi-qr`                 | Upload UPI QR for a shop.                  |
+| **POST**   | `/api/shops/:shopId/categories`             | Add category to shop.                      |
+| **PUT**    | `/api/shops/:shopId/categories/:categoryId` | Update category.                           |
+| **DELETE** | `/api/shops/:shopId/categories/:categoryId` | Delete category.                           |
+| **POST**   | `/api/shops/:shopId/menu`                   | Add menu item with image.                  |
+| **PUT**    | `/api/shops/:shopId/menu/:itemId`           | Update menu item.                          |
+| **DELETE** | `/api/shops/:shopId/menu/:itemId`           | Delete menu item.                          |
+| **GET**    | `/api/shops/:shopId/orders`                 | Get all orders of shop (filter by status). |
+| **PATCH**  | `/api/vendor/orders/:orderId/status`        | Update order status.                       |
+| **GET**    | `/api/shops/:shopId/reviews`                | Get reviews & average rating.              |
+| **GET**    | `/api/shops/:shopId/analytics`              | Get sales & top items.                     |
+
+---
+
+### \[ADMIN] – Requires Admin JWT
+
+| Method   | Endpoint                    | Description                |
+| -------- | --------------------------- | -------------------------- |
+| **POST** | `/api/shops/:shopId/tables` | Create new table with QR.  |
+| **GET**  | `/api/shops/:shopId/tables` | Get all tables for a shop. |
+
+---
+
+## ⚡ Real-Time Events (Socket.IO)
+
+| Event                 | Direction       | Emitter           | Listener          | Data Payload            | Description                                    |
+| --------------------- | --------------- | ----------------- | ----------------- | ----------------------- | ---------------------------------------------- |
+| `joinShopRoom`        | Client → Server | Vendor Frontend   | Server            | `shopId`                | Vendor joins private room for shop orders.     |
+| `joinUserRoom`        | Client → Server | Customer Frontend | Server            | `userId`                | Customer joins private room for order updates. |
+| `call_waiter_request` | Client → Server | Customer Frontend | Server            | `{shopId, tableNumber}` | Customer requests assistance.                  |
+| `new_order`           | Server → Client | Server            | Vendor Frontend   | `{order}`               | New order pushed to vendor instantly.          |
+| `order_status_update` | Server → Client | Server            | Customer Frontend | `{order}`               | Live status update for customer.               |
+| `waiter_call_alert`   | Server → Client | Server            | Vendor Frontend   | `{tableNumber, time}`   | Waiter call alert for vendor.                  |
 
 ---
 
 ## ⚙️ Installation & Setup
 
-1. **Clone the repository**
+```bash
+# Clone the repository
+git clone https://github.com/shingalaparth/Menumate-backend.git
+cd Menumate-backend
 
-   ```bash
-   git clone https://github.com/yourusername/menumate-backend.git
-   cd menumate-backend
-   ```
+# Install dependencies
+npm install
 
-2. **Install dependencies**
+# Setup environment variables
+cp .env.example .env
+# Fill in MongoDB URI, JWT secret, Cloudinary keys
 
-   ```bash
-   npm install
-   ```
+# Create first Admin
+npm run dev
+# Register vendor via Postman → Update role to "admin" in MongoDB
+```
 
-3. **Setup environment variables**
-   Copy `.env.example` to `.env`:
+Start server:
 
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+npm run dev
+```
 
-   Update `.env` with your values:
+The server runs on:
+👉 `http://localhost:3000` with real-time support.
 
-   ```env
-   PORT=3000
-   MONGODB_URI=mongodb://localhost:27017/menumate
-   JWT_SECRET=your-jwt-secret
-   CLOUDINARY_CLOUD_NAME=your-cloud-name
-   CLOUDINARY_API_KEY=your-api-key
-   CLOUDINARY_API_SECRET=your-api-secret
-   ```
 
-4. **Run the development server**
 
-   ```bash
-   npm run dev
-   ```
 
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch → `git checkout -b feature-name`
-3. Commit changes → `git commit -m "Add new feature"`
-4. Push to branch → `git push origin feature-name`
-5. Create a Pull Request 🎉
-
----
-
-## 📜 License
-
-This project is licensed under the **MIT License**.
-
----
-
-✨ Pro Tip: Add badges (e.g., `npm`, `node`, `express`, `license`) and an API collection (Postman/Insomnia JSON) to make it even more dev-friendly.
