@@ -22,6 +22,16 @@ const shopSchema = new mongoose.Schema({
         ref: 'Vendor',
         required: true
     },
+    foodCourt: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'FoodCourt',
+        default: null // If null, it's a standalone shop.
+    },
+    status: {
+        type: String,
+        enum: ['Pending', 'Approved', 'Rejected'],
+        default: 'Approved' // Default is 'Approved' for standalone shops. We'll set it to 'Pending' in our logic for food court shops.
+    },
     isActive: {
         type: Boolean,
         default: true // Allows admin to deactivate a shop
@@ -36,5 +46,6 @@ const shopSchema = new mongoose.Schema({
 
 // Index for performance: quickly find all shops for an owner
 shopSchema.index({ owner: 1 });
+shopSchema.index({ foodCourt: 1 });
 
 module.exports = mongoose.model('Shop', shopSchema);

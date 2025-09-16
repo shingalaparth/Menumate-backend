@@ -1,60 +1,81 @@
-# 🍽️ MenuMate Backend (V1)
+# 🍽️ MenuMate Backend (V1 & V2)
 
-This repository contains the complete, feature-rich backend for **MenuMate**, a QR code-based digital menu and ordering system.
-This **V1 release** is a production-ready foundation for a **Single Shop / Café** business model, including **real-time capabilities** and a **multi-role architecture**.
+This repository contains the **production-ready backend** for **MenuMate**, a QR code-based digital menu and ordering system.
+It supports two business models in a single codebase:
+
+* **V1 – Single Shop / Café**
+* **V2 – Multi-Vendor Food Court**
 
 ---
 
 ## ✨ Core Features
 
-### 🔐 Multi-Role Architecture
+### 🏷️ Foundational Features (V1 Core)
 
-* Secure, token-based (JWT) authentication for three distinct roles:
+Available for both standalone shops and food court stalls:
 
-  * **Customers**
-  * **Vendors**
-  * **Super Admin**
+* **Multi-Role Authentication (JWT)**
 
-### 🏪 Vendor & Multi-Shop Management
+  * Customers → Place orders
+  * Vendors → Manage shops
+  * Super Admin → Full system control
+* **Vendor & Multi-Shop Management**
+* **Menu Management (CRUD)** with Cloudinary image uploads
+* **Real-Time Orders (Socket.IO)**
 
-* A single vendor account can **own and manage multiple shops**.
+  * Instant vendor notifications
+  * Live customer status updates
+* **Supporting Features**
 
-### 📖 Full Menu Control
+  * Reviews & Ratings
+  * Vendor Analytics (sales, revenue, top items)
+  * Waiter Call system
+  * Manual UPI Payments (upload UPI QR)
 
-* Complete CRUD (Create, Read, Update, Delete) for **nested menus**, including:
+---
 
-  * Categories
-  * Items
-  * Image uploads via **Cloudinary**
+### 🏢 Food Court Features (V2 Upgrade)
 
-### ⚡ Real-Time Order Pipeline
+Advanced features to support multi-vendor food courts:
 
-* Customers **place orders**.
-* Vendors **instantly receive them** on their dashboard via **Socket.IO** (no refresh required).
+* **Food Court Entity** (container for many shops)
+* **Food Court Manager Role** (assigned by Super Admin)
+* **Vendor Approval Workflow** → New shops pending until approved
+* **Unified Menu Display** → One QR = all shops in that court
+* **Unified Cart** → Customers order from multiple shops in one checkout
+* **Automatic Order Splitting** → Single customer order → Multiple sub-orders routed to vendors
 
-### 🔄 Two-Way Real-Time Updates
+---
 
-* Vendors update order statuses (**Accepted, Preparing, Completed**).
-* Customers get **real-time notifications** of updates.
+## 🏗️ System Models
 
-### 🛠️ Supporting Features
+### 📍 V1 – Single Shop
 
-* **QR Code System** → Each table has a unique QR linked to its shop.
-* **Reviews & Ratings** → Customers can review completed orders; vendors see ratings & feedback.
-* **Vendor Analytics** → Stats like total revenue, today’s sales, and top-selling items.
-* **Waiter Call** → Real-time feature for customers to request assistance from their table.
-* **Manual UPI Payments** → Vendors can upload their **UPI QR Code** for customers to scan & pay.
+* Vendor owns one or more shops
+* Shop has categories & menu items
+* QR → tied to one shop’s menu
+* Cart & checkout → single `Order` document
+
+### 📍 V2 – Food Court
+
+* Super Admin creates a `FoodCourt`
+* Vendors’ shops assigned to it
+* QR → fetches menus from **all shops** in that court
+* Cart → unified, multi-shop
+* Checkout →
+
+  * `ParentOrder` (overall bill)
+  * Multiple `SubOrders` (per shop kitchen ticket)
 
 ---
 
 ## 🛠️ Tech Stack
 
-* **Framework**: Node.js, Express.js
-* **Database**: MongoDB + Mongoose ODM
-* **Authentication**: JSON Web Tokens (JWT)
+* **Backend Framework**: Node.js + Express.js
+* **Database**: MongoDB (Mongoose ODM)
+* **Authentication**: JWT
 * **Real-Time**: Socket.IO
-* **Image Storage**: Cloudinary
-* **File Uploads**: Multer
+* **Media Storage**: Cloudinary (Multer for uploads)
 
 ---
 
@@ -66,38 +87,46 @@ menumate-backend/
 │   ├── cloudinary.js
 │   └── database.js
 ├── controllers/
+│   ├── adminController.js
 │   ├── analyticsController.js
 │   ├── cartController.js
 │   ├── categoryController.js
+│   ├── foodCourtAdminController.js
 │   ├── menuController.js
 │   ├── orderController.js
 │   ├── publicController.js
+│   ├── registrationController.js
 │   ├── reviewController.js
 │   ├── shopController.js
 │   ├── tableController.js
 │   ├── userController.js
 │   └── vendorController.js
 ├── middlewares/
-│   ├── auth_user.js      # Protects customer routes
-│   ├── auth.js           # Protects vendor routes
-│   └── authorize.js      # Authorizes admin-only routes
+│   ├── auth.js
+│   ├── auth_user.js
+│   └── authorize.js
 ├── models/
 │   ├── cart.js
 │   ├── category.js
+│   ├── foodCourt.js
 │   ├── menuItem.js
 │   ├── order.js
+│   ├── parentOrder.js
 │   ├── review.js
 │   ├── shop.js
 │   ├── table.js
 │   ├── user.js
 │   └── vendor.js
 ├── routes/
+│   ├── adminRoutes.js
 │   ├── analyticsRoutes.js
 │   ├── cartRoutes.js
 │   ├── categoryRoutes.js
+│   ├── foodCourtAdminRoutes.js
 │   ├── menuRoutes.js
 │   ├── orderRoutes.js
 │   ├── publicRoutes.js
+│   ├── registrationRoutes.js
 │   ├── reviewRoutes.js
 │   ├── shopRoutes.js
 │   ├── tableRoutes.js
@@ -107,8 +136,6 @@ menumate-backend/
 ├── utils/
 │   ├── hash.js
 │   └── jwt.js
-├── .env
-├── .env.example
 └── app.js
 ```
 
@@ -116,102 +143,108 @@ menumate-backend/
 
 ## 📚 API Endpoints
 
-### \[PUBLIC] – No Authentication Required
+### 🌍 Public (No Auth)
 
-| Method   | Endpoint                         | Description                                        |
-| -------- | -------------------------------- | -------------------------------------------------- |
-| **GET**  | `/api/public/menu/:qrIdentifier` | Fetch shop, table & menu details for a scanned QR. |
-| **POST** | `/api/users/login`               | Customer login (name + phone).                     |
-| **POST** | `/api/vendor/register`           | Vendor account creation.                           |
-| **POST** | `/api/vendor/login`              | Vendor login.                                      |
-
----
-
-### \[CUSTOMER] – Requires Customer JWT
-
-| Method     | Endpoint                      | Description                          |
-| ---------- | ----------------------------- | ------------------------------------ |
-| **GET**    | `/api/cart`                   | Get current user’s cart.             |
-| **POST**   | `/api/cart`                   | Add or update an item in cart.       |
-| **DELETE** | `/api/cart/items/:menuItemId` | Remove item from cart.               |
-| **POST**   | `/api/orders`                 | Place order from cart.               |
-| **GET**    | `/api/orders`                 | Get customer order history.          |
-| **GET**    | `/api/orders/:id`             | Get details of one order.            |
-| **POST**   | `/api/orders/:id/review`      | Submit review for a completed order. |
+| Method | Endpoint                         | Description                                         |
+| ------ | -------------------------------- | --------------------------------------------------- |
+| GET    | `/api/public/menu/:qrIdentifier` | Fetch menu → single shop (V1) or food court (V2)    |
+| GET    | `/api/public/foodcourts`         | List all active food courts (for registration form) |
+| POST   | `/api/register/shop-vendor`      | Apply for shop (standalone or food court)           |
+| POST   | `/api/users/login`               | Customer login/register                             |
+| POST   | `/api/vendor/login`              | Vendor / Manager / Admin login                      |
 
 ---
 
-### \[VENDOR] – Requires Vendor JWT
+### 👤 Customer (JWT Required)
 
-| Method     | Endpoint                                    | Description                                |
-| ---------- | ------------------------------------------- | ------------------------------------------ |
-| **PATCH**  | `/api/vendor/profile`                       | Update vendor profile.                     |
-| **POST**   | `/api/shops`                                | Create a new shop.                         |
-| **GET**    | `/api/shops`                                | Get all shops owned by vendor.             |
-| **PUT**    | `/api/shops/:shopId/upi-qr`                 | Upload UPI QR for a shop.                  |
-| **POST**   | `/api/shops/:shopId/categories`             | Add category to shop.                      |
-| **PUT**    | `/api/shops/:shopId/categories/:categoryId` | Update category.                           |
-| **DELETE** | `/api/shops/:shopId/categories/:categoryId` | Delete category.                           |
-| **POST**   | `/api/shops/:shopId/menu`                   | Add menu item with image.                  |
-| **PUT**    | `/api/shops/:shopId/menu/:itemId`           | Update menu item.                          |
-| **DELETE** | `/api/shops/:shopId/menu/:itemId`           | Delete menu item.                          |
-| **GET**    | `/api/shops/:shopId/orders`                 | Get all orders of shop (filter by status). |
-| **PATCH**  | `/api/vendor/orders/:orderId/status`        | Update order status.                       |
-| **GET**    | `/api/shops/:shopId/reviews`                | Get reviews & average rating.              |
-| **GET**    | `/api/shops/:shopId/analytics`              | Get sales & top items.                     |
+| Method | Endpoint                 | Description                                   |
+| ------ | ------------------------ | --------------------------------------------- |
+| GET    | `/api/cart`              | Get current cart                              |
+| POST   | `/api/cart`              | Add/update item (single shop or unified cart) |
+| POST   | `/api/orders`            | Place order (→ Order / Parent+SubOrders)      |
+| GET    | `/api/orders`            | Customer’s order history                      |
+| POST   | `/api/orders/:id/review` | Submit review for a completed sub-order       |
 
 ---
 
-### \[ADMIN] – Requires Admin JWT
+### 🏪 Vendor (JWT Required)
 
-| Method   | Endpoint                    | Description                |
-| -------- | --------------------------- | -------------------------- |
-| **POST** | `/api/shops/:shopId/tables` | Create new table with QR.  |
-| **GET**  | `/api/shops/:shopId/tables` | Get all tables for a shop. |
+| Method | Endpoint                             | Description                      |
+| ------ | ------------------------------------ | -------------------------------- |
+| PATCH  | `/api/vendor/profile`                | Update vendor profile            |
+| POST   | `/api/shops`                         | Create new shop                  |
+| GET    | `/api/shops`                         | Get all shops owned by vendor    |
+| PUT    | `/api/shops/:shopId/upi-qr`          | Upload UPI QR                    |
+| GET    | `/api/shops/:shopId/orders`          | Get orders/sub-orders of a shop  |
+| PATCH  | `/api/vendor/orders/:orderId/status` | Update order/sub-order status    |
+| GET    | `/api/shops/:shopId/reviews`         | Get reviews & average rating     |
+| GET    | `/api/shops/:shopId/analytics`       | Get sales stats                  |
+| ...    | `/api/shops/:shopId/...`             | Full CRUD for categories & items |
+
+---
+
+### 🏢 Food Court Manager (JWT Required)
+
+| Method | Endpoint                            | Description                       |
+| ------ | ----------------------------------- | --------------------------------- |
+| GET    | `/api/manager/pending-shops`        | List pending shop applications    |
+| PATCH  | `/api/manager/shops/:shopId/status` | Approve / Reject shop application |
+
+---
+
+### 👑 Super Admin (JWT Required)
+
+| Method | Endpoint                                       | Description               |
+| ------ | ---------------------------------------------- | ------------------------- |
+| POST   | `/api/admin/foodcourts`                        | Create new food court     |
+| GET    | `/api/admin/foodcourts`                        | List all food courts      |
+| PATCH  | `/api/admin/shops/:shopId/assign-foodcourt`    | Assign shop to food court |
+| PATCH  | `/api/admin/vendors/:vendorId/appoint-manager` | Appoint vendor as manager |
+| POST   | `/api/shops/:shopId/tables`                    | Create new table + QR     |
 
 ---
 
 ## ⚡ Real-Time Events (Socket.IO)
 
-| Event                 | Direction       | Emitter           | Listener          | Data Payload            | Description                                    |
-| --------------------- | --------------- | ----------------- | ----------------- | ----------------------- | ---------------------------------------------- |
-| `joinShopRoom`        | Client → Server | Vendor Frontend   | Server            | `shopId`                | Vendor joins private room for shop orders.     |
-| `joinUserRoom`        | Client → Server | Customer Frontend | Server            | `userId`                | Customer joins private room for order updates. |
-| `call_waiter_request` | Client → Server | Customer Frontend | Server            | `{shopId, tableNumber}` | Customer requests assistance.                  |
-| `new_order`           | Server → Client | Server            | Vendor Frontend   | `{order}`               | New order pushed to vendor instantly.          |
-| `order_status_update` | Server → Client | Server            | Customer Frontend | `{order}`               | Live status update for customer.               |
-| `waiter_call_alert`   | Server → Client | Server            | Vendor Frontend   | `{tableNumber, time}`   | Waiter call alert for vendor.                  |
+| Event                 | Direction       | Description                            |
+| --------------------- | --------------- | -------------------------------------- |
+| `joinShopRoom`        | Client → Server | Vendor joins room to receive orders    |
+| `joinUserRoom`        | Client → Server | Customer joins room for status updates |
+| `call_waiter_request` | Client → Server | Customer requests waiter               |
+| `new_order`           | Server → Client | Push new order/sub-order to vendor     |
+| `order_status_update` | Server → Client | Push status updates to customer        |
+| `waiter_call_alert`   | Server → Client | Notify vendor of waiter call           |
 
 ---
 
 ## ⚙️ Installation & Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/shingalaparth/Menumate-backend.git
-cd Menumate-backend
-
-# Install dependencies
+# Clone & install
+git clone https://github.com/shingalaparth/menumate-backend.git
+cd menumate-backend
 npm install
 
-# Setup environment variables
+# Environment
 cp .env.example .env
-# Fill in MongoDB URI, JWT secret, Cloudinary keys
+# Add your MongoDB URI, JWT secret, Cloudinary keys, etc.
 
-# Create first Admin
-npm run dev
-# Register vendor via Postman → Update role to "admin" in MongoDB
-```
-
-Start server:
-
-```bash
+# Start server
 npm run dev
 ```
 
-The server runs on:
-👉 `http://localhost:3000` with real-time support.
+### Create Super Admin
 
+1. Register a new vendor (via `/api/vendor/login`).
+2. In MongoDB, open the `vendors` collection.
+3. Change their `role` from `"vendor"` to `"admin"`.
 
+---
 
+## ✅ Summary
+
+* **V1** → Single shop with independent orders.
+* **V2** → Food court with unified cart + auto order splitting.
+* Real-time updates, analytics, ratings, UPI payments, and waiter calls.
+* One backend, two business models.
 

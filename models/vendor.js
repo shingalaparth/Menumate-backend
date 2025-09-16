@@ -37,6 +37,11 @@ const vendorSchema = new mongoose.Schema(
       type: String,
       enum: ["vendor", "admin"],
       default: "vendor"
+    },
+       managesFoodCourt: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'FoodCourt',
+        default: null // If this is set, this user is a Food Court Admin
     }
     // ⚠️ Don't store confirm_password in DB.
     // Validate it at controller level before saving password

@@ -43,6 +43,6 @@ router.use('/:shopId/analytics', analyticsRouter);
 // Re-route nested resource requests to their respective routers
 router.use('/:shopId/menu', menuRouter);
 router.use('/:shopId/categories', categoryRouter);
-router.use('/:shopId/tables', authorize('admin'), tableRouter);
+router.use('/:shopId/tables', tableRouter);
 
 module.exports = router;

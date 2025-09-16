@@ -5,6 +5,7 @@ const path = require("path");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
 const connectDB = require("./config/database");
+const cors = require("cors");
 
 const http = require('http');
 const { Server } = require("socket.io");
@@ -17,8 +18,11 @@ const shopRoutes = require("./routes/shopRoutes");
 const cartRoutes = require("./routes/cartRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const vendorOrderRoutes = require("./routes/vendorOrderRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const foodCourtAdminRoutes = require("./routes/foodCourtAdminRoutes"); 
+const registrationRoutes = require("./routes/registrationRoutes");
 
-dotenv.config({ path: ".env" });
+dotenv.config();
 
 const app = express();
 app.use(cors())
@@ -38,6 +42,7 @@ const io = new Server(server, {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
 app.use((req, res, next) => {
   req.io = io;
   next();
@@ -53,7 +58,8 @@ app.get("/", (req, res) => res.json({
 }));
 
 // Mount the main routers
-app.use("/api/public", publicRoutes)
+app.use("/api/public", publicRoutes);
+app.use("/api/register", registrationRoutes);
 
 app.use("/api/users", userRoute);
 
@@ -64,6 +70,10 @@ app.use("/api/shops", shopRoutes);
 
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
+
+app.use("/api/admin", adminRoutes); 
+app.use("/api/manager", foodCourtAdminRoutes); 
+
 
 //SOCKET.IO CONNECTION LOGIC ---
 io.on('connection', (socket) => {

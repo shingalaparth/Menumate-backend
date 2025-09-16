@@ -10,4 +10,4 @@ router.route('/')
     .post(createTableForShop)   // POST /api/shops/:shopId/tables
     .get(getTablesForShop);     // GET /api/shops/:shopId/tables
 
-module.exports = router;
+module.exports = router; 

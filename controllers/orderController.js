@@ -1,203 +1,220 @@
 // controllers/orderController.js
+const mongoose = require('mongoose');
 const Order = require('../models/order');
+const ParentOrder = require('../models/parentOrder');
 const Cart = require('../models/cart');
 const Shop = require('../models/shop');
+const User = require('../models/user'); // Added for manual population in vendor orders
 
-// @desc    Place a new order from the user's cart
+// Helper function to generate IDs explicitly in the controller
+async function generateShortOrderId(modelName, prefix) {
+    const Model = mongoose.model(modelName);
+    const count = await Model.countDocuments();
+    const timestamp = Date.now().toString().slice(-4);
+    return `${prefix}-${count + 1}-${timestamp}`;
+}
+
+// @desc    Place a new order from the user's cart (handles both single shop and food court)
 // @route   POST /api/orders
 // @access  Private (User only)
-const placeOrder = async (req, res) => {
+const placeOrder = async (req, res, next) => {
     try {
         const userId = req.user._id;
         const { paymentMethod, tableId } = req.body;
-
-        if (!paymentMethod || !tableId) {
-            return res.status(400).json({ success: false, message: "Payment method and table information are required." });
-        }
-
-        // 1. Find the user's cart
         const cart = await Cart.findOne({ user: userId });
+
         if (!cart || cart.items.length === 0) {
             return res.status(400).json({ success: false, message: "Your cart is empty." });
         }
 
-        // 2. Check if the shop is active
-        const shop = await Shop.findById(cart.shop);
-        if (!shop || !shop.isActive) {
-            return res.status(400).json({ success: false, message: "This shop is currently not accepting orders." });
-        }
-
-        // 3. Create the order object
-        const newOrder = await Order.create({
-            user: userId,
-            shop: cart.shop,
-            table: tableId,
-            items: cart.items, // These are copied directly
-            subtotal: cart.subtotal,
-            totalAmount: cart.subtotal, // For now, total is same as subtotal
-            paymentMethod: paymentMethod,
-            paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Pending', // Handle payment status
-        });
-
-        // 4. IMPORTANT: Clear the user's cart after placing the order
-        await Cart.findByIdAndDelete(cart._id);
-        
-       // --- THIS IS THE NEW, REAL-TIME PART ---
-        // Get the 'io' instance we attached in app.js
         const io = req.io;
-        // Emit an event ONLY to the room matching the shop's ID
-        // The frontend for that specific shop will be listening for this 'new_order' event
-        io.to(cart.shop.toString()).emit('new_order', newOrder);
-        console.log(`🔔 Emitted 'new_order' to room ${cart.shop.toString()}`);
-        // ---------------------------------------
 
+        // --- FOOD COURT ORDER LOGIC ---
+        if (cart.foodCourt) {
+            const itemsByShop = cart.items.reduce((acc, item) => {
+                const shopId = item.shop.toString();
+                if (!acc[shopId]) { acc[shopId] = []; }
+                acc[shopId].push(item);
+                return acc;
+            }, {});
 
-        res.status(201).json({
-            success: true,
-            message: "Order placed successfully!",
-            data: newOrder
-        });
+            const parentOrderId = await generateShortOrderId('ParentOrder', 'FC');
+            const newParentOrder = new ParentOrder({
+                shortOrderId: parentOrderId,
+                user: userId,
+                foodCourt: cart.foodCourt,
+                table: tableId,
+                totalAmount: cart.subtotal,
+                paymentMethod,
+                paymentStatus: 'Pending',
+            });
+            const parentOrder = await newParentOrder.save();
 
+            const subOrderPromises = Object.keys(itemsByShop).map(async (shopId) => {
+                const shopItems = itemsByShop[shopId];
+                const shopSubtotal = shopItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+                
+                const subOrderId = await generateShortOrderId('Order', 'MM');
+                const newSubOrder = new Order({
+                    shortOrderId: subOrderId,
+                    parentOrder: parentOrder._id,
+                    user: userId, shop: shopId, table: tableId,
+                    items: shopItems,
+                    subtotal: shopSubtotal,
+                    totalAmount: shopSubtotal,
+                    paymentMethod, paymentStatus: 'Pending'
+                });
+                const subOrder = await newSubOrder.save();
+                
+                parentOrder.subOrders.push(subOrder._id);
+                io.to(shopId).emit('new_order', subOrder);
+            });
+
+            await Promise.all(subOrderPromises);
+            await parentOrder.save();
+            await Cart.findByIdAndDelete(cart._id);
+            return res.status(201).json({ success: true, message: "Order placed successfully!", data: parentOrder });
+
+        } else {
+            // --- SINGLE SHOP ORDER LOGIC ---
+            const shop = await Shop.findById(cart.shop);
+            if (!shop || !shop.isActive) { return res.status(400).json({ success: false, message: "This shop is not accepting orders." }); }
+
+            const singleOrderId = await generateShortOrderId('Order', 'MM');
+            const newSingleOrder = new Order({
+                shortOrderId: singleOrderId,
+                user: userId, shop: cart.shop, table: tableId,
+                items: cart.items,
+                subtotal: cart.subtotal,
+                totalAmount: cart.subtotal,
+                paymentMethod, paymentStatus: 'Pending'
+            });
+            const savedOrder = await newSingleOrder.save();
+
+            await Cart.findByIdAndDelete(cart._id);
+            io.to(cart.shop.toString()).emit('new_order', savedOrder);
+            return res.status(201).json({ success: true, message: "Order placed successfully!", data: savedOrder });
+        }
     } catch (error) {
         console.error("Place Order Error:", error);
-        res.status(500).json({ success: false, message: 'Server Error' });
+        next(error); 
     }
 };
 
 // @desc    Get all orders for the logged-in user
 // @route   GET /api/orders
 // @access  Private (User only)
-const getMyOrders = async (req, res) => {
+const getMyOrders = async (req, res, next) => {
     try {
         const orders = await Order.find({ user: req.user._id })
             .populate('shop', 'name address')
-            .sort({ createdAt: -1 }); // Newest orders first
-
+            .sort({ createdAt: -1 });
         res.status(200).json({ success: true, count: orders.length, data: orders });
-
-    } catch (error) {
-        console.error("Get My Orders Error:", error);
-        res.status(500).json({ success: false, message: 'Server Error' });
-    }
+    } catch (error) { next(error); }
 };
 
 // @desc    Get a single order by its ID
 // @route   GET /api/orders/:id
 // @access  Private (User only)
-const getOrderById = async (req, res) => {
+const getOrderById = async (req, res, next) => {
     try {
-        const order = await Order.findById(req.params.id)
-            .populate('shop', 'name address')
-            .populate('user', 'name phone');
-
-        if (!order) {
-            return res.status(404).json({ success: false, message: 'Order not found.' });
-        }
-
-        // Security check: Make sure the order belongs to the logged-in user
-        if (order.user._id.toString() !== req.user._id.toString()) {
+        const order = await Order.findById(req.params.id).populate('shop', 'name address');
+        if (!order) { return res.status(404).json({ success: false, message: 'Order not found.' }); }
+        if (order.user.toString() !== req.user._id.toString()) {
             return res.status(401).json({ success: false, message: 'Not authorized to view this order.' });
         }
-
         res.status(200).json({ success: true, data: order });
-
-    } catch (error) {
-        console.error("Get Order By ID Error:", error);
-        res.status(500).json({ success: false, message: 'Server Error' });
-    }
+    } catch (error) { next(error); }
 };
+
 // @desc    Update an order's status (for Vendors)
 // @route   PATCH /api/vendor/orders/:orderId/status
 // @access  Private (Vendor only)
-const updateOrderStatusByVendor = async (req, res) => {
+const updateOrderStatusByVendor = async (req, res, next) => {
     try {
         const { orderId } = req.params;
         const { status } = req.body;
         const vendorId = req.vendor._id;
 
-        // 1. Validate the new status
         const validStatuses = ['Accepted', 'Preparing', 'Ready', 'Completed', 'Cancelled'];
         if (!validStatuses.includes(status)) {
             return res.status(400).json({ success: false, message: 'Invalid order status.' });
         }
 
-        // 2. Find the order and populate shop details to get the owner
         const order = await Order.findById(orderId).populate('shop');
-        if (!order) {
-            return res.status(404).json({ success: false, message: 'Order not found.' });
-        }
+        if (!order) { return res.status(404).json({ success: false, message: 'Order not found.' }); }
 
-        // 3. CRITICAL SECURITY CHECK: Ensure the logged-in vendor owns the shop associated with the order
         if (order.shop.owner.toString() !== vendorId.toString()) {
             return res.status(403).json({ success: false, message: 'Access denied. You do not have permission to update this order.' });
         }
 
-        // 4. Update and save the order
         order.orderStatus = status;
         await order.save();
 
-        // 5. REAL-TIME NOTIFICATION to the CUSTOMER
-        // Send an event to the specific user's room
         const io = req.io;
         io.to(order.user.toString()).emit('order_status_update', order);
-        console.log(`🔔 Emitted 'order_status_update' to room ${order.user.toString()}`);
-
-        res.status(200).json({
-            success: true,
-            message: `Order status updated to ${status}`,
-            data: order
-        });
-
-    } catch (error) {
-        console.error("Update Order Status Error:", error);
-        res.status(500).json({ success: false, message: error.message });
-
-    }
+        
+        res.status(200).json({ success: true, message: `Order status updated to ${status}`, data: order });
+    } catch (error) { next(error); }
 };
 
 // @desc    Get all orders for a specific shop (for Vendors)
 // @route   GET /api/shops/:shopId/orders
 // @access  Private (Vendor only)
-const getOrdersForVendorShop = async (req, res) => {
+const getOrdersForVendorShop = async (req, res, next) => {
     try {
         const { shopId } = req.params;
         const vendorId = req.vendor._id;
 
-        // 1. Security Check: Verify the vendor owns this shop
+        // Security Check (remains the same)
         const shop = await Shop.findById(shopId);
         if (!shop || shop.owner.toString() !== vendorId.toString()) {
             return res.status(403).json({ success: false, message: 'Access denied. You do not own this shop.' });
         }
 
-        // 2. Build the query based on the shop ID
         const query = { shop: shopId };
+        if (req.query.status) { query.orderStatus = req.query.status; }
 
-        // 3. Add filtering based on query parameters (e.g., /orders?status=Pending)
-        if (req.query.status) {
-            query.orderStatus = req.query.status;
-        }
+        // --- NEW ROBUST LOGIC (MANUAL POPULATION) ---
+        
+        // 1. Fetch the orders without populating, using .lean() for speed.
+        // .lean() returns plain JavaScript objects, not full Mongoose documents.
+        const orders = await Order.find(query).sort({ createdAt: -1 }).lean();
 
-        // 4. Execute the query, populating customer details and sorting by newest first
-        const orders = await Order.find(query)
-            .populate('user', 'name phone') // Get customer name and phone
-            .sort({ createdAt: -1 });
+        // 2. Collect all unique user IDs from the orders
+        const userIds = [...new Set(orders.map(order => order.user))];
+
+        // 3. Fetch all the required users in a single, efficient database query
+        const users = await User.find({ '_id': { $in: userIds } }).select('name phone').lean();
+
+        // 4. Create a map for easy lookup (e.g., { 'userId1': {name: 'Rohan'}, 'userId2': {name: 'Priya'} })
+        const userMap = users.reduce((acc, user) => {
+            acc[user._id] = user;
+            return acc;
+        }, {});
+
+        // 5. Manually combine the user data with the order data
+        const populatedOrders = orders.map(order => {
+            return {
+                ...order,
+                user: userMap[order.user] || null // Attach the user object
+            };
+        });
+        
+        // ---------------------------------------------
 
         res.status(200).json({
             success: true,
-            count: orders.length,
-            data: orders
+            count: populatedOrders.length,
+            data: populatedOrders
         });
 
     } catch (error) {
+        // We need to import the User model for this to work
         console.error("Get Orders for Vendor Error:", error);
-        res.status(500).json({ success: false, message: 'Server Error' });
+        next(error);
     }
 };
 
-module.exports = {
-    placeOrder,
-    getMyOrders,
-    getOrderById,
-    updateOrderStatusByVendor,
-    getOrdersForVendorShop
-};
+
+module.exports = { placeOrder, getMyOrders, getOrderById, updateOrderStatusByVendor, getOrdersForVendorShop };
