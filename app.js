@@ -91,21 +91,28 @@ io.on('connection', (socket) => {
     console.log(`👤 Customer client ${socket.id} joined room ${userId}`);
   }); 
  
-  // Listen for a customer calling a waiter
-  socket.on('call_waiter_request', (data) => {
-    // 'data' will be an object sent from the customer's frontend,
-    // e.g., { shopId: '...', tableNumber: 'Table 5', tableId: '...' }
+   // --- FINAL, ROBUST WAITER CALL LOGIC ---
+    // This version works for BOTH Single Shops and Food Courts
+    socket.on('call_waiter_request', (data) => {
+        // The data payload can be:
+        // V1 (Single Shop): { shopId: '...', tableNumber: '...' }
+        // V2 (Food Court):  { targetShopId: '...', tableNumber: '...' }
 
-    if (data.shopId && data.tableNumber) {
-      // Forward the alert to the specific shop's room
-      io.to(data.shopId).emit('waiter_call_alert', {
-        tableNumber: data.tableNumber,
-        tableId: data.tableId,
-        time: new Date()
-      });
-      console.log(`🔔 Emitted 'waiter_call_alert' for table ${data.tableNumber} to room ${data.shopId}`);
-    }
-  });
+        // This line intelligently determines the destination.
+        // It prioritizes 'targetShopId' but falls back to 'shopId'.
+        const destinationShopId = data.targetShopId || data.shopId;
+
+        if (destinationShopId && data.tableNumber) {
+            // Forward the alert to the correct shop's room
+            io.to(destinationShopId).emit('waiter_call_alert', {
+                tableNumber: data.tableNumber,
+                time: new Date()
+            });
+            console.log(`🔔 Emitted 'waiter_call_alert' for table ${data.tableNumber} to room ${destinationShopId}`);
+        } else {
+            console.log("Waiter call received with missing shop ID data:", data);
+        }
+    });
 
 
   socket.on('disconnect', () => {

@@ -20,7 +20,10 @@ const orderSchema = new mongoose.Schema({
     orderStatus: { type: String, enum: ['Pending', 'Accepted', 'Preparing', 'Ready', 'Completed', 'Cancelled'], default: 'Pending' },
     paymentMethod: { type: String, enum: ['COD', 'Online'], required: true },
     paymentStatus: { type: String, enum: ['Pending', 'Completed', 'Failed'], default: 'Pending' },
-    notes: { type: String, trim: true }
+    notes: { type: String, trim: true },
+    completedAt: {
+        type: Date // This will be set when the order status becomes 'Completed'
+    }
 }, {
     timestamps: true
 });

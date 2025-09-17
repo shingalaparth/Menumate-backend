@@ -27,7 +27,26 @@ const placeOrder = async (req, res, next) => {
             return res.status(400).json({ success: false, message: "Your cart is empty." });
         }
 
-        const io = req.io;
+        const io = req.io; 
+
+        // Get all unique menu item IDs from the cart
+        const menuItemIds = cart.items.map(item => item.menuItem);
+        // Fetch the source-of-truth prices from the database
+        const menuItems = await MenuItem.find({ '_id': { $in: menuItemIds } });
+        const priceMap = menuItems.reduce((map, item) => {
+            map[item._id] = item.price;
+            return map;
+        }, {});
+
+        // Now, calculate the true total based on DB prices
+        let trueTotalAmount = 0;
+        for (const item of cart.items) {
+            if (!priceMap[item.menuItem]) {
+                throw new Error(`Menu item with ID ${item.menuItem} not found.`);
+            }
+            trueTotalAmount += priceMap[item.menuItem] * item.quantity;
+        }
+        // -----------------------------------------------------------
 
         // --- FOOD COURT ORDER LOGIC ---
         if (cart.foodCourt) {
@@ -53,7 +72,7 @@ const placeOrder = async (req, res, next) => {
             const subOrderPromises = Object.keys(itemsByShop).map(async (shopId) => {
                 const shopItems = itemsByShop[shopId];
                 const shopSubtotal = shopItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-                
+
                 const subOrderId = await generateShortOrderId('Order', 'MM');
                 const newSubOrder = new Order({
                     shortOrderId: subOrderId,
@@ -65,7 +84,7 @@ const placeOrder = async (req, res, next) => {
                     paymentMethod, paymentStatus: 'Pending'
                 });
                 const subOrder = await newSubOrder.save();
-                
+
                 parentOrder.subOrders.push(subOrder._id);
                 io.to(shopId).emit('new_order', subOrder);
             });
@@ -73,6 +92,20 @@ const placeOrder = async (req, res, next) => {
             await Promise.all(subOrderPromises);
             await parentOrder.save();
             await Cart.findByIdAndDelete(cart._id);
+
+            // --- IMPROVEMENT 2: POPULATE SUB-ORDERS IN RESPONSE ---
+            const finalParentOrder = await ParentOrder.findById(parentOrder._id).populate({
+                path: 'subOrders',
+                populate: { path: 'shop', select: 'name' }
+            });
+
+            // --- IMPROVEMENT 3: SEND SOCKET CONFIRMATION TO CUSTOMER ---
+            io.to(userId.toString()).emit('order_confirmed', {
+                success: true,
+                message: 'Your food court order has been placed!',
+                order: finalParentOrder
+            });
+
             return res.status(201).json({ success: true, message: "Order placed successfully!", data: parentOrder });
 
         } else {
@@ -93,11 +126,18 @@ const placeOrder = async (req, res, next) => {
 
             await Cart.findByIdAndDelete(cart._id);
             io.to(cart.shop.toString()).emit('new_order', savedOrder);
+
+            io.to(userId.toString()).emit('order_confirmed', {
+                success: true,
+                message: 'Your order has been placed successfully!',
+                order: savedOrder
+            });
+
             return res.status(201).json({ success: true, message: "Order placed successfully!", data: savedOrder });
         }
     } catch (error) {
         console.error("Place Order Error:", error);
-        next(error); 
+        next(error);
     }
 };
 
@@ -149,11 +189,16 @@ const updateOrderStatusByVendor = async (req, res, next) => {
         }
 
         order.orderStatus = status;
+
+        if (status === 'Completed') {
+            order.completedAt = new Date();
+        }
+
         await order.save();
 
         const io = req.io;
         io.to(order.user.toString()).emit('order_status_update', order);
-        
+
         res.status(200).json({ success: true, message: `Order status updated to ${status}`, data: order });
     } catch (error) { next(error); }
 };
@@ -172,11 +217,16 @@ const getOrdersForVendorShop = async (req, res, next) => {
             return res.status(403).json({ success: false, message: 'Access denied. You do not own this shop.' });
         }
 
+        // --- IMPROVEMENT 4: ADD PAGINATION ---
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
         const query = { shop: shopId };
         if (req.query.status) { query.orderStatus = req.query.status; }
 
         // --- NEW ROBUST LOGIC (MANUAL POPULATION) ---
-        
+
         // 1. Fetch the orders without populating, using .lean() for speed.
         // .lean() returns plain JavaScript objects, not full Mongoose documents.
         const orders = await Order.find(query).sort({ createdAt: -1 }).lean();
@@ -200,7 +250,7 @@ const getOrdersForVendorShop = async (req, res, next) => {
                 user: userMap[order.user] || null // Attach the user object
             };
         });
-        
+
         // ---------------------------------------------
 
         res.status(200).json({
