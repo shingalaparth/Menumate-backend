@@ -6,11 +6,14 @@ const { authorizeManager } = require('../middlewares/authorize'); // Import the 
 
 const {
     getPendingShops,
-    updateShopStatus
+    updateShopStatus,
+    getFoodCourtAnalytics
 } = require('../controllers/foodCourtAdminController');
 
 // All routes in this file require the user to be a logged-in Food Court Manager
 router.use(protect, authorizeManager);
+
+router.get('/analytics', getFoodCourtAnalytics);
 
 // Route to get the list of pending applications
 router.get('/pending-shops', getPendingShops);

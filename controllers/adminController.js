@@ -80,9 +80,50 @@ const appointFoodCourtManager = async (req, res) => {
     }
 };
 
+// @desc    Get platform-wide analytics for the Super Admin
+// @route   GET /api/admin/analytics
+// @access  Private (Super Admin only)
+const getPlatformAnalytics = async (req, res, next) => {
+    try {
+        const [
+            totalRevenue,
+            totalOrders,
+            shopCount,
+            vendorCount,
+            foodCourtCount
+        ] = await Promise.all([
+            Order.aggregate([
+                { $match: { orderStatus: 'Completed' } },
+                { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+            ]),
+            Order.countDocuments({ orderStatus: 'Completed' }),
+            Shop.countDocuments({ isActive: true }),
+            Vendor.countDocuments(),
+            FoodCourt.countDocuments({ isActive: true })
+        ]);
+
+        const analyticsData = {
+            totalRevenue: totalRevenue[0]?.total || 0,
+            totalOrders: totalOrders || 0,
+            activeShops: shopCount || 0,
+            totalVendors: vendorCount || 0,
+            activeFoodCourts: foodCourtCount || 0
+        };
+
+        res.status(200).json({ success: true, data: analyticsData });
+
+    } catch (error) {
+        console.error("Platform Analytics Error:", error);
+        next(error);
+    }
+};
+// ----------------------------
+
+
 module.exports = {
     createFoodCourt,
     getAllFoodCourts,
     assignShopToFoodCourt,
-    appointFoodCourtManager
+    appointFoodCourtManager,
+    getPlatformAnalytics
 };

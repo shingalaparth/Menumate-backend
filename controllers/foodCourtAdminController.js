@@ -63,7 +63,62 @@ const updateShopStatus = async (req, res) => {
     }
 };
 
+// @desc    Get analytics for the manager's specific food court
+// @route   GET /api/manager/analytics
+// @access  Private (Food Court Manager only)
+const getFoodCourtAnalytics = async (req, res, next) => {
+    try {
+        const foodCourtId = req.foodCourtId; // From authorizeManager middleware
+
+        // Find all shops that belong to this food court
+        const shopsInFoodCourt = await Shop.find({ foodCourt: foodCourtId }).select('_id');
+        const shopIds = shopsInFoodCourt.map(s => s._id);
+
+        // Run aggregation queries only on orders from those shops
+        const [
+            totalStats,
+            salesByShop
+        ] = await Promise.all([
+            Order.aggregate([
+                { $match: { shop: { $in: shopIds }, orderStatus: 'Completed' } },
+                { $group: {
+                    _id: null,
+                    totalRevenue: { $sum: '$totalAmount' },
+                    totalOrders: { $sum: 1 }
+                }}
+            ]),
+            Order.aggregate([
+                { $match: { shop: { $in: shopIds }, orderStatus: 'Completed' } },
+                { $group: {
+                    _id: '$shop',
+                    shopTotalRevenue: { $sum: '$totalAmount' }
+                }},
+                { $lookup: { from: 'shops', localField: '_id', foreignField: '_id', as: 'shopDetails' } },
+                { $unwind: '$shopDetails' },
+                { $project: { _id: 0, shopId: '$_id', shopName: '$shopDetails.name', shopTotalRevenue: 1 } }
+            ])
+        ]);
+        
+        const analyticsData = {
+            foodCourtId,
+            totalRevenue: totalStats[0]?.totalRevenue || 0,
+            totalOrders: totalStats[0]?.totalOrders || 0,
+            salesByShop: salesByShop
+        };
+
+        res.status(200).json({ success: true, data: analyticsData });
+
+    } catch (error) {
+        console.error("Food Court Analytics Error:", error);
+        next(error);
+    }
+};
+// ----------------------------
+
+
+
 module.exports = {
     getPendingShops,
-    updateShopStatus
+    updateShopStatus,
+    getFoodCourtAnalytics
 };
