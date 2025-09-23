@@ -7,7 +7,8 @@ const {
     createCategory,
     getShopCategories, // Renamed from getVendorCategories
     updateCategory,
-    deleteCategory
+    deleteCategory,
+    restoreCategory
 } = require('../controllers/categoryController');
 
 router.route('/')
@@ -17,5 +18,7 @@ router.route('/')
 router.route('/:categoryId')
     .put(updateCategory)    // PUT /api/shops/:shopId/categories/:categoryId
     .delete(deleteCategory);  // DELETE /api/shops/:shopId/categories/:categoryId
+
+router.patch('/:categoryId/restore', restoreCategory);
 
 module.exports = router;

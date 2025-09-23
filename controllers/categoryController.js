@@ -1,31 +1,14 @@
 // controllers/categoryController.js
 
 const Category = require('../models/category');
-const Shop = require('../models/shop');
 const MenuItem = require('../models/menuItem');
-
-// --- HELPER FUNCTION FOR SECURITY ---
-// Checks if the logged-in vendor owns the shop they are trying to access
-const checkShopOwnership = async (shopId, vendorId) => {
-    const shop = await Shop.findById(shopId);
-    if (!shop) {
-        return { success: false, message: 'Shop not found', status: 404 };
-    }
-    if (shop.owner.toString() !== vendorId.toString()) {
-        return { success: false, message: 'Access denied. You do not own this shop.', status: 403 };
-    }
-    return { success: true, shop }; // Return the shop object if successful
-};
-
+const { checkShopOwnership } = require('../utils/checkOwnership');
 
 // CREATE CATEGORY
 const createCategory = async (req, res) => {
     try {
         const { shopId } = req.params;
-        const vendorId = req.vendor._id;
-
-        // 1. Security Check
-        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+        const ownershipCheck = await checkShopOwnership(shopId, req.vendor);
         if (!ownershipCheck.success) {
             return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
         }
@@ -61,16 +44,19 @@ const createCategory = async (req, res) => {
 const getShopCategories = async (req, res) => {
     try {
         const { shopId } = req.params;
-        const vendorId = req.vendor._id;
-
-        // 1. Security Check
-        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+         const ownershipCheck = await checkShopOwnership(shopId, req.vendor);
         if (!ownershipCheck.success) {
             return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
         }
-
+        // This query now handles active vs. archived items
+        const query = { shop: shopId };
+        if (req.query.status === 'archived') {
+            query.isArchived = true;
+        } else {
+            query.isArchived = false;
+        }
         // 2. Find all categories for THIS SHOP
-        const categories = await Category.find({ shop: shopId }).sort({ sortOrder: 1, name: 1 });
+        const categories = await Category.find(query).sort({ sortOrder: 1, name: 1 });
 
         res.status(200).json({ success: true, count: categories.length, data: categories });
 
@@ -84,10 +70,7 @@ const getShopCategories = async (req, res) => {
 const updateCategory = async (req, res) => {
     try {
         const { shopId, categoryId } = req.params;
-        const vendorId = req.vendor._id;
-
-        // 1. Security Check
-        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+         const ownershipCheck = await checkShopOwnership(shopId, req.vendor);
         if (!ownershipCheck.success) {
             return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
         }
@@ -115,25 +98,28 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
     try {
         const { shopId, categoryId } = req.params;
-        const vendorId = req.vendor._id;
-
-        // 1. Security Check
-        const ownershipCheck = await checkShopOwnership(shopId, vendorId);
+         const ownershipCheck = await checkShopOwnership(shopId, req.vendor);
         if (!ownershipCheck.success) {
             return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
         }
 
         // 2. Check if the category is empty
-        const itemCount = await MenuItem.countDocuments({ category: categoryId });
+        const itemCount = await MenuItem.countDocuments({ category: categoryId, isArchived: false });
         if (itemCount > 0) {
             return res.status(400).json({
                 success: false,
                 message: `Cannot delete category. It contains ${itemCount} menu items. Please move or delete them first.`
             });
         }
-        
+
         // 3. Find and delete the category
-        const category = await Category.findOneAndDelete({ _id: categoryId, shop: shopId });
+        // When archiving, we now also set the 'archivedAt' timestamp
+        const category = await Category.findOneAndUpdate(
+            { _id: categoryId, shop: shopId },
+            { isArchived: true, isActive: false, archivedAt: new Date() },
+            { new: true }
+        );
+
         if (!category) {
             return res.status(404).json({ success: false, message: 'Category not found in this shop' });
         }
@@ -145,11 +131,40 @@ const deleteCategory = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
+const restoreCategory = async (req, res) => {
+    try {
+        const { shopId, categoryId } = req.params;
+        const ownershipCheck = await checkShopOwnership(shopId, req.vendor);
+        if (!ownershipCheck.success) {
+            return res.status(ownershipCheck.status).json({ success: false, message: ownershipCheck.message });
+        }
+
+        // 2. Restore archived category
+        const category = await Category.findOneAndUpdate(
+            { _id: categoryId, shop: shopId },
+            { isArchived: false, isActive: true, $unset: { archivedAt: "" } },
+            { new: true }
+        );
+
+        if (!category) {
+            return res.status(404).json({ success: false, message: 'Archived category not found.' });
+        }
+
+        res.status(200).json({ success: true, message: 'Category restored successfully.', data: category });
+
+    } catch (error) {
+        console.error('Restore category error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+
 
 
 module.exports = {
     createCategory,
     getShopCategories,
     updateCategory,
-    deleteCategory
+    deleteCategory,
+    restoreCategory
 };

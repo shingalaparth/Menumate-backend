@@ -26,17 +26,26 @@ const categorySchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  
   sortOrder: {
     type: Number,
     default: 0
+  },
+   isArchived: {
+    type: Boolean,
+    default: false
+  },
+  archivedAt: {
+    type: Date // This will be set when the category is archived
   }
 }, {
   timestamps: true
 });
+// This tells MongoDB to automatically delete documents 30 days after the 'archivedAt' date is set.
+// 2592000 seconds = 30 days
+categorySchema.index({ "archivedAt": 1 }, { expireAfterSeconds: 2592000 });
 
 // Ensure unique category names per shop
 categorySchema.index({ shop: 1, name: 1 }, { unique: true });
-categorySchema.index({ shop : 1, isActive: 1 });
+categorySchema.index({ shop : 1, isActive: 1,isArchived: 1 });
 
 module.exports = mongoose.model('Category', categorySchema);

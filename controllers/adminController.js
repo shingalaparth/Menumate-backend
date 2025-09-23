@@ -2,6 +2,8 @@
 const FoodCourt = require('../models/foodCourt');
 const Shop = require('../models/shop');
 const Vendor = require('../models/vendor');
+const Order = require('../models/order');
+const mongoose = require('mongoose');
 
 // @desc    Create a new food court
 // @route   POST /api/admin/foodcourts
@@ -61,22 +63,41 @@ const assignShopToFoodCourt = async (req, res) => {
 // @route   PATCH /api/admin/vendors/:vendorId/appoint-manager
 // @access  Private (Super Admin only)
 const appointFoodCourtManager = async (req, res) => {
-    try {
+     try {
         const { vendorId } = req.params;
         const { foodCourtId } = req.body;
 
-        const vendor = await Vendor.findByIdAndUpdate(
-            vendorId,
-            { managesFoodCourt: foodCourtId },
-            { new: true, runValidators: true }
-        );
-        if (!vendor) {
-            return res.status(404).json({ success: false, message: 'Vendor not found.' });
+        // 1. Find the documents we need to work with
+        const newManager = await Vendor.findById(vendorId);
+        const foodCourt = await FoodCourt.findById(foodCourtId);
+
+        if (!newManager || !foodCourt) {
+            return res.status(404).json({ success: false, message: 'Vendor or Food Court not found.' });
         }
-        res.status(200).json({ success: true, message: `Vendor ${vendor.name} appointed as manager.`, data: vendor });
+
+        // 2. If the food court already has a manager, remove their old role to prevent conflicts
+        if (foodCourt.manager && foodCourt.manager.toString() !== newManager._id.toString()) {
+            await Vendor.findByIdAndUpdate(foodCourt.manager, { $set: { managesFoodCourt: null } });
+        }
+
+        // 3. Update the new manager's profile to link them to the food court
+        newManager.managesFoodCourt = foodCourtId;
+        
+        // 4. Update the food court's profile to link it to the new manager
+        foodCourt.manager = vendorId;
+
+        // 5. Save all changes to the database
+        await newManager.save();
+        await foodCourt.save();
+
+        res.status(200).json({ 
+            success: true, 
+            message: `Vendor '${newManager.name}' successfully appointed as manager for '${foodCourt.name}'.`
+        });
+
     } catch (error) {
         console.error("Appoint Manager Error:", error);
-        res.status(500).json({ success: false, message: 'Server Error' });
+        next(error);
     }
 };
 

@@ -32,6 +32,24 @@ const shopSchema = new mongoose.Schema({
         enum: ['Pending', 'Approved', 'Rejected'],
         default: 'Approved' // Default is 'Approved' for standalone shops. We'll set it to 'Pending' in our logic for food court shops.
     },
+    // openingTime: {
+    //     type: String, // Format: "HH:MM" (e.g., "09:00")
+    //     trim: true,
+    //     default: "09:00",
+    //     validate: {
+    //         validator: function(v) { return /^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/.test(v); },
+    //         message: props => `${props.value} is not a valid 24-hour time format (HH:MM)!`
+    //     }
+    // },
+    // closingTime: {
+    //     type: String, // Format: "HH:MM" (e.g., "22:00")
+    //     trim: true,
+    //     default: "22:00",
+    //     validate: {
+    //         validator: function(v) { return /^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/.test(v); },
+    //         message: props => `${props.value} is not a valid 24-hour time format (HH:MM)!`
+    //     }
+    // },
     isActive: {
         type: Boolean,
         default: true // Allows admin to deactivate a shop

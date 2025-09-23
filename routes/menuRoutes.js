@@ -8,7 +8,8 @@ const {
     createMenuItem,
     getShopMenuItems, // Renamed from getVendorMenuItems
     updateMenuItem,
-    deleteMenuItem
+    deleteMenuItem,
+    restoreMenuItem
 } = require('../controllers/menuController');
 
 const { upload } = require('../config/cloudinary');
@@ -22,5 +23,7 @@ router.route('/')
 router.route('/:itemId')
     .put(upload.single('image'), updateMenuItem) // PUT /api/shops/:shopId/menu/:itemId
     .delete(deleteMenuItem);                     // DELETE /api/shops/:shopId/menu/:itemId
+
+router.patch('/:itemId/restore', restoreMenuItem);
 
 module.exports = router;

@@ -18,6 +18,11 @@ const foodCourtSchema = new mongoose.Schema({
         required: [true, "City is required"],
         trim: true
     },
+    manager: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Vendor',
+        default: null
+    },
     // This flag allows the Super Admin to enable or disable an entire food court
     isActive: {
         type: Boolean,
